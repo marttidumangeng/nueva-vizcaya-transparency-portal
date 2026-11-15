@@ -1,0 +1,16 @@
+{
+  // The Province of Nueva Vizcaya portal. `npm run deploy:nv` builds and deploys.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "betternuevavizcaya",
+  // betternuevavizcaya.org is the site's address; the dababon.pro name stays so earlier links keep working.
+  "routes": [
+    { "pattern": "betternuevavizcaya.org", "custom_domain": true },
+    { "pattern": "betternuevavizcaya.dababon.pro", "custom_domain": true }
+  ],
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist-nueva-vizcaya",
+    // Client-side routes (/gaa, /projects/...) serve index.html.
+    "not_found_handling": "single-page-application"
+  }
+}

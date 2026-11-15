@@ -15,6 +15,7 @@ import { PageHead } from '../components/Chrome';
 import { downloadText } from '../lib/csv';
 import { count, php, phpFull, plural } from '../lib/format';
 import { departmentShort, gaaCsv, gaaYearTotals, hasYear, loadGaa, type GaaResult, type GaaRow } from '../lib/gaa';
+import { areaLabel, barangaysIn, coordsIn, inBarangay, mapUrl, NO_BARANGAY } from '../lib/local';
 import { usePortal, type Async } from '../lib/portal-context';
 import { useTitle } from '../lib/use-title';
 
@@ -195,6 +196,7 @@ function Programs({ result, placeList }: { result: GaaResult; placeList: string 
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const dept = params.get('dept') ?? '';
+  const brgy = params.get('brgy') ?? '';
   const yearParam = Number(params.get('year'));
   const year = (GAA_YEARS as readonly number[]).includes(yearParam) ? yearParam : null;
   const [shown, setShown] = useState(PAGE);
@@ -216,11 +218,25 @@ function Programs({ result, placeList }: { result: GaaResult; placeList: string 
     return [...n.entries()].sort((a, b) => b[1].rows - a[1].rows);
   }, [all]);
 
+  // Barangays the names mention, most programs first; a name with two is under both.
+  const barangays = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of all) {
+      const found = barangaysIn(config, r.name);
+      for (const b of found.length ? found : [NO_BARANGAY]) n.set(b, (n.get(b) ?? 0) + 1);
+    }
+    return [...n.entries()].sort((a, b) => Number(a[0] === NO_BARANGAY) - Number(b[0] === NO_BARANGAY) || b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [all, config]);
+  const hasBarangays = (config.barangays?.length ?? 0) > 0;
+  const area = areaLabel(config);
+  const areaLc = area.toLowerCase();
+
   const filtered = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const y = year ? String(year) : null;
     const rows = all.filter((r) => {
       if (dept && r.department_id !== dept) return false;
+      if (brgy && !inBarangay(config, r.name, brgy)) return false;
       if (y && !hasYear(r, y)) return false;
       if (words.length) {
         const hay = `${r.name} ${r.department}`.toLowerCase();
@@ -229,7 +245,7 @@ function Programs({ result, placeList }: { result: GaaResult; placeList: string 
       return true;
     });
     return y ? [...rows].sort((a, b) => (b.years[y]?.amount ?? 0) - (a.years[y]?.amount ?? 0)) : rows;
-  }, [all, q, dept, year]);
+  }, [all, q, dept, brgy, year, config]);
   const narrowed = filtered.length !== all.length;
 
   return (
@@ -276,6 +292,15 @@ function Programs({ result, placeList }: { result: GaaResult; placeList: string 
               {departments.map(([id, d]) => <option key={id} value={id}>{d.label} ({count(d.rows)})</option>)}
             </select>
           </label>
+          {hasBarangays && (
+            <label className="field">
+              <span className="label">{area}</span>
+              <select value={brgy} onChange={(e) => setParam('brgy', e.target.value)}>
+                <option value="">Any {areaLc}</option>
+                {barangays.map(([k, n]) => <option key={k} value={k}>{k === NO_BARANGAY ? `No ${areaLc} named` : k} ({count(n)})</option>)}
+              </select>
+            </label>
+          )}
           <label className="field">
             <span className="label">Year</span>
             <select value={year ?? ''} onChange={(e) => setParam('year', e.target.value)}>
@@ -318,6 +343,8 @@ function Programs({ result, placeList }: { result: GaaResult; placeList: string 
 }
 
 function ProgramRow({ r, year, many }: { r: GaaRow; year: number | null; many: boolean }) {
+  const { config } = usePortal();
+  const at = coordsIn(r.name);
   return (
     <div className="tr" role="row">
       <span role="cell" className="td-project">
@@ -325,6 +352,8 @@ function ProgramRow({ r, year, many }: { r: GaaRow; year: number | null; many: b
         <span className="project-meta">
           <span className="label">{departmentShort(r.department)}</span>
           <External href={`https://budget.bettergov.ph/d/${r.department_id}`}>department</External>
+          {barangaysIn(config, r.name).map((b) => <span key={b} className="tag tag-brgy" title={`The name mentions ${b}`}>{b}</span>)}
+          {at && <External href={mapUrl(at)}>map</External>}
           {many && r.reasons.map((p) => <span key={p} className="tag tag-place">names {p}</span>)}
         </span>
       </span>

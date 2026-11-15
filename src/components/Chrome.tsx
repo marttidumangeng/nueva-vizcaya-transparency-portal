@@ -37,6 +37,11 @@ export function Masthead() {
         <div className="page masthead-top-inner">
           <span className="muted">{today}</span>
           <span className="masthead-links">
+            {config.related?.map((r) => (
+              <a key={r.url} href={r.url}>
+                {r.label} <span aria-hidden="true">→</span>
+              </a>
+            ))}
             <a href={NATIONAL_URL} target="_blank" rel="noopener">
               National picture <span aria-hidden="true">↗</span>
             </a>
@@ -57,6 +62,7 @@ export function Masthead() {
               {KIND_LABELS[config.kind]} <span aria-hidden="true">·</span> Budgets 2020–2027
             </span>
             <span className="masthead-name">{config.name}</span>
+            {config.notice && <span className="masthead-notice">{config.notice}</span>}
           </span>
         </Link>
         <a className="masthead-with" href="https://bettergov.ph" target="_blank" rel="noopener">

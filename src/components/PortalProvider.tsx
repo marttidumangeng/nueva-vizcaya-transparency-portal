@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import portalConfig from '../../portal.config';
+import { portalFor } from '../../portals';
 import { createClient } from '../api/client';
 import { DEFAULT_API } from '../config';
 import { PortalContext, type Async, type PortalState } from '../lib/portal-context';
 import { resolveScope, type ScopeResult } from '../lib/scope';
+
+// Picked at build time by the Vite mode (see portals/index.ts).
+const portalConfig = portalFor(import.meta.env.VITE_PORTAL);
 
 const toError = (e: unknown) => (e instanceof Error ? e : new Error(String(e)));
 

@@ -20,7 +20,7 @@
   --ink-mute: #8a92a1;
 
   /* Accents */
-  --accent: #0b4fd9;        /* BetterGov blue */
+  --accent: #0b4fd9;        /* BetterGov blue; a portal's config.accent overrides it */
   --accent-deep: #0a44bd;
   --accent-soft: #e8efff;
   --positive: #3a6b3a;

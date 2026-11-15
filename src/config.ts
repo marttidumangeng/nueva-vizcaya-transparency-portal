@@ -56,6 +56,31 @@ export interface PortalConfig {
   operator: { name: string; url?: string; email?: string };
   /** Optional logo: a path under public/ ("/brand/lgu-seal.png") or a URL. */
   logo?: string;
+  /**
+   * One line under the name, on every page: who this portal is not. Use it
+   * when the masthead carries an official seal but the LGU does not run the site.
+   */
+  notice?: string;
+  /**
+   * The opening paragraph again in a local language, under the English one on
+   * the 2027 page. `lang` is the BCP 47 tag ("fil", "ilo"); `label` names it.
+   */
+  localSummary?: { lang: string; label: string; text: string };
+  /**
+   * The LGU's barangays. A project whose title names one is grouped and
+   * filtered by it. `aliases` are other spellings, and sitios, in the titles.
+   */
+  barangays?: { name: string; aliases?: string[] }[];
+  /** What the entries in `barangays` are called: "Barangay" (default), or "Municipality" for a province. */
+  areaLabel?: string;
+  /**
+   * This portal's accent colour, in place of the theme's BetterGov blue:
+   * `base` for links and bars, `deep` for the navigation, `soft` for
+   * highlights, `paper` for the tinted background.
+   */
+  accent?: { base: string; deep: string; soft: string; paper?: string };
+  /** Sister portals to link from the top bar: the province from a town's portal, a town from the province's. */
+  related?: { label: string; url: string }[];
   /** Canonical URL of this deployment, for link previews. */
   siteUrl?: string;
   /**

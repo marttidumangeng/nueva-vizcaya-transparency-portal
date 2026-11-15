@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import type { BridgeGroup, DatasetInfo, Disclaimer, GroupInfo } from '../api/types';
 import { BRIDGE_GROUPS } from '../api/types';
@@ -8,11 +8,15 @@ import { PageHead } from '../components/Chrome';
 import OfficesSection from '../components/OfficesSection';
 import { projectsCsv, downloadText } from '../lib/csv';
 import { count, php, phpDelta, plural } from '../lib/format';
+import { areaLabel, barangaysIn, inBarangay, NO_BARANGAY, workName } from '../lib/local';
 import { usePortal } from '../lib/portal-context';
 import { summarise, type ScopedProject, type ScopeResult, type Summary } from '../lib/scope';
 import { useTitle } from '../lib/use-title';
 
 const PAGE = 100;
+/** The largest projects are listed apart only when the list is long enough to bury them. */
+const TOP = 5;
+const TOP_MIN = 20;
 
 type Sort = 'house' | 'nep' | 'change' | 'title';
 const SORTS: Record<Sort, { label: string; cmp: (a: ScopedProject, b: ScopedProject) => number }> = {
@@ -68,6 +72,10 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
   const summary = useMemo(() => summarise(all), [all]);
   const groups = useMemo(() => groupInfo(datasets, all), [datasets, all]);
   const programName = (k: DatasetKey) => datasets.find((d) => d.key === k)?.short ?? k.toUpperCase();
+  const workOf = useCallback(
+    (p: ScopedProject) => (p.dataset === 'dpwh' && p.program ? p.program : datasets.find((d) => d.key === p.dataset)?.label ?? p.dataset.toUpperCase()),
+    [datasets],
+  );
 
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
@@ -75,6 +83,8 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
   const status = (params.get('status') ?? '') as BridgeGroup | '';
   const why = params.get('why') ?? '';
   const office = params.get('office') ?? '';
+  const brgy = params.get('brgy') ?? '';
+  const work = params.get('work') ?? '';
   const sort = (params.get('sort') as Sort) in SORTS ? (params.get('sort') as Sort) : 'house';
   const [shown, setShown] = useState(PAGE);
 
@@ -99,6 +109,29 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
     return [...seen.entries()];
   }, [all]);
 
+  // By barangay (a title that names two is under both) and by DPWH's own program name.
+  const byBarangay = useMemo(() => {
+    const cells = new Map<string, Tally>();
+    for (const p of all) {
+      const found = barangaysIn(config, p.title);
+      for (const b of found.length ? found : [NO_BARANGAY]) tally(cells, b, p);
+    }
+    return [...cells.entries()].sort((a, b) => Number(a[0] === NO_BARANGAY) - Number(b[0] === NO_BARANGAY) || b[1].house - a[1].house || a[0].localeCompare(b[0]));
+  }, [all, config]);
+  const byWork = useMemo(() => {
+    const cells = new Map<string, Tally>();
+    for (const p of all) tally(cells, workOf(p), p);
+    return [...cells.entries()].sort((a, b) => b[1].house - a[1].house || a[0].localeCompare(b[0]));
+  }, [all, workOf]);
+  const top = useMemo(
+    () => (all.length >= TOP_MIN ? [...all].sort((a, b) => (b.house_php ?? b.nep_php ?? 0) - (a.house_php ?? a.nep_php ?? 0)).slice(0, TOP) : []),
+    [all],
+  );
+  const hasBarangays = (config.barangays?.length ?? 0) > 0;
+  const area = areaLabel(config);
+  const areaLc = area.toLowerCase();
+  const noArea = `No ${areaLc} named`;
+
   const filtered = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const rows = all.filter((p) => {
@@ -106,6 +139,8 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
       if (status && p.bridge_group !== status) return false;
       if (why && !p.reasons.some((r) => `${r.kind}:${r.label}` === why)) return false;
       if (office && p.office !== office) return false;
+      if (brgy && !inBarangay(config, p.title, brgy)) return false;
+      if (work && workOf(p) !== work) return false;
       if (words.length) {
         const hay = [p.title, p.program, p.pap, p.office, p.region].join(' ').toLowerCase();
         if (!words.every((w) => hay.includes(w))) return false;
@@ -113,7 +148,7 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
       return true;
     });
     return rows.sort((a, b) => SORTS[sort].cmp(a, b) || a.title.localeCompare(b.title));
-  }, [all, q, program, status, why, office, sort]);
+  }, [all, q, program, status, why, office, brgy, work, sort, config, workOf]);
   const filteredSummary = useMemo(() => summarise(filtered), [filtered]);
   const narrowed = filtered.length !== all.length;
 
@@ -124,11 +159,72 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
         title={`${plural(summary.rows, 'project')} for ${name} in the 2027 budget`}
       >
         <Lede summary={summary} />
+        {config.localSummary && (
+          <p className="local-summary" lang={config.localSummary.lang}>
+            <span className="label">{config.localSummary.label}</span>
+            {config.localSummary.text}
+          </p>
+        )}
       </PageHead>
 
       <Stats summary={summary} programName={programName} />
 
-      <OfficesSection />
+      {top.length > 0 && (
+        <section className="section" aria-labelledby="top-h">
+          <h2 id="top-h" className="section-h">The {top.length} largest projects</h2>
+          <ol className="top-list">
+            {top.map((p) => (
+              <li key={p.key}>
+                <span className="top-main">
+                  <Link to={`/projects/${p.dataset}/${encodeURIComponent(p.id)}`} className="project-title">{p.title}</Link>
+                  <span className="project-meta">
+                    <span title={workOf(p)}>{workName(workOf(p))}</span>
+                    {barangaysIn(config, p.title).map((b) => <span key={b} className="tag tag-brgy">{b}</span>)}
+                    <StatusChip group={p.bridge_group} label={p.status_label} held={p.held} />
+                  </span>
+                </span>
+                <span className="top-amount num">
+                  {php(p.house_php ?? p.nep_php)}
+                  <span className="label">{p.house_php != null ? 'House bill' : 'NEP'}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {hasBarangays && (
+        <section className="section" aria-labelledby="where-h">
+          <h2 id="where-h" className="section-h">By {areaLc}</h2>
+          <BarLegend />
+          <Tiles
+            label={areaLc}
+            rows={byBarangay.map(([k, c]) => ({ key: k, name: k === NO_BARANGAY ? noArea : k, cell: c }))}
+            active={brgy}
+            onPick={(k) => setParam('brgy', brgy === k ? '' : k)}
+          />
+          <p className="fine">
+            A project is under a {areaLc} when its title names it; one that names two is under both, so the {areaLc} figures
+            are not added up. Bars share one scale. Pick one to filter the list below.
+          </p>
+        </section>
+      )}
+
+      {byWork.length > 1 && (
+        <section className="section" aria-labelledby="work-h">
+          <h2 id="work-h" className="section-h">By type of work</h2>
+          <Tiles
+            list
+            label="type of work"
+            rows={byWork.map(([k, c]) => ({ key: k, name: workName(k), hint: k, cell: c }))}
+            active={work}
+            onPick={(k) => setParam('work', work === k ? '' : k)}
+          />
+          <p className="fine">
+            Type of work is the DPWH program a project is listed under, or the list it comes from; hover a name for it as published.
+          </p>
+        </section>
+      )}
 
       <section className="section" aria-labelledby="groups-h">
         <h2 id="groups-h" className="section-h">What the House bill did to them</h2>
@@ -199,6 +295,24 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
               </select>
             </label>
           )}
+          {hasBarangays && (
+            <label className="field">
+              <span className="label">{area}</span>
+              <select value={brgy} onChange={(e) => setParam('brgy', e.target.value)}>
+                <option value="">Any {areaLc}</option>
+                {byBarangay.map(([k, c]) => <option key={k} value={k}>{k === NO_BARANGAY ? noArea : k} ({count(c.rows)})</option>)}
+              </select>
+            </label>
+          )}
+          {byWork.length > 1 && (
+            <label className="field">
+              <span className="label">Type of work</span>
+              <select value={work} onChange={(e) => setParam('work', e.target.value)}>
+                <option value="">Any type</option>
+                {byWork.map(([k, c]) => <option key={k} value={k}>{workName(k)} ({count(c.rows)})</option>)}
+              </select>
+            </label>
+          )}
           {reasons.length > 1 && (
             <label className="field">
               <span className="label">Listed because</span>
@@ -227,7 +341,7 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
           </p>
         )}
 
-        <ProjectTable rows={filtered.slice(0, shown)} programName={programName} />
+        <ProjectTable rows={filtered.slice(0, shown)} programName={programName} barangays={(t) => barangaysIn(config, t)} />
 
         {filtered.length === 0 && <p className="state">No project matches. Try fewer words or clear the filters.</p>}
         {filtered.length > shown && (
@@ -244,8 +358,64 @@ function Projects({ scope, datasets }: { scope: ScopeResult; datasets: DatasetIn
         </p>
       </section>
 
+      <OfficesSection />
+
       <Disclaimers items={disclaimers} compact />
     </>
+  );
+}
+
+/** Rows and per-version amounts for one barangay or type of work. `nepRows` and `houseRows` tell "no such line" from zero. */
+interface Tally { rows: number; nepRows: number; nep: number; houseRows: number; house: number }
+
+function tally(cells: Map<string, Tally>, key: string, p: ScopedProject) {
+  const c = cells.get(key) ?? { rows: 0, nepRows: 0, nep: 0, houseRows: 0, house: 0 };
+  c.rows++;
+  if (p.nep_php != null) { c.nepRows++; c.nep += p.nep_php; }
+  if (p.house_php != null) { c.houseRows++; c.house += p.house_php; }
+  cells.set(key, c);
+}
+
+function BarLegend() {
+  return (
+    <p className="legend">
+      <span><i className="sw sw-nep" /> NEP</span>
+      <span><i className="sw sw-house" /> House bill</span>
+    </p>
+  );
+}
+
+/** One tile per area or type of work: its count and a bar for each version, on one scale. Picking one filters the list. */
+function Tiles({ rows, active, onPick, label, list }: {
+  rows: { key: string; name: string; hint?: string; cell: Tally }[];
+  active: string;
+  onPick: (key: string) => void;
+  label: string;
+  list?: boolean;
+}) {
+  const max = Math.max(1, ...rows.flatMap((r) => [r.cell.nep, r.cell.house]));
+  const width = (v: number) => `${Math.max(v > 0 ? 1.5 : 0, (v / max) * 100)}%`;
+  return (
+    <div className={`tiles${list ? ' tiles-list' : ''}`} role="group" aria-label={`Filter by ${label}`}>
+      {rows.map(({ key, name, hint, cell }) => (
+        <button key={key} type="button" className={`tile${active === key ? ' active' : ''}`} aria-pressed={active === key} title={hint} onClick={() => onPick(key)}>
+          <span className="tile-name">{name}</span>
+          <span className="tile-count">{plural(cell.rows, 'project')}</span>
+          <span className="vbars">
+            <span className="vbar">
+              <span className="label">NEP</span>
+              <span className="vtrack"><i className="sw-nep" style={{ width: width(cell.nep) }} /></span>
+              <span className="num">{php(cell.nepRows ? cell.nep : null)}</span>
+            </span>
+            <span className="vbar">
+              <span className="label">House</span>
+              <span className="vtrack"><i className="sw-house" style={{ width: width(cell.house) }} /></span>
+              <span className="num strong">{php(cell.houseRows ? cell.house : null)}</span>
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -315,7 +485,7 @@ function Stats({ summary, programName }: { summary: Summary; programName: (k: Da
   );
 }
 
-function ProjectTable({ rows, programName }: { rows: ScopedProject[]; programName: (k: DatasetKey) => string }) {
+function ProjectTable({ rows, programName, barangays }: { rows: ScopedProject[]; programName: (k: DatasetKey) => string; barangays: (title: string) => string[] }) {
   if (!rows.length) return null;
   return (
     <div className="table" role="table" aria-label="Projects">
@@ -334,6 +504,7 @@ function ProjectTable({ rows, programName }: { rows: ScopedProject[]; programNam
               <span className="label">{programName(p.dataset)}</span>
               {p.office && <span>{shortOffice(p.office)}</span>}
               {p.region && <span>{p.region}</span>}
+              {barangays(p.title).map((b) => <span key={b} className="tag tag-brgy" title={`The title names ${b}`}>{b}</span>)}
               <ReasonTags reasons={p.reasons} />
             </span>
           </span>
