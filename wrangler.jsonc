@@ -5,7 +5,7 @@
   "name": "betterbagabag",
   // betterbagabag.org is the site's address; the dababon.pro name stays so earlier links keep working.
   "routes": [
-    { "pattern": "betterbagabag.org", "custom_domain": true },
+    { "pattern": "budget.betterbagabag.org", "custom_domain": true },
     { "pattern": "betterbagabag.dababon.pro", "custom_domain": true }
   ],
   "compatibility_date": "2026-10-01",

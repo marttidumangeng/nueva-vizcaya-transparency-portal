@@ -16,7 +16,7 @@ export default defineConfig({
   shortName: 'Nueva Vizcaya',
   operator: { name: 'DababonPro - BetterNuevaVizcaya' },
   siteUrl: 'https://betternuevavizcaya.org',
-  related: [{ label: 'Bagabag', url: 'https://betterbagabag.org' }],
+  related: [{ label: 'Bagabag', url: 'https://budget.betterbagabag.org' }],
   // The template's credit stays in the footer.
   buildYourOwnStrip: false,
   notice: 'Independent and unofficial. Not a website of the Provincial Government of Nueva Vizcaya.',

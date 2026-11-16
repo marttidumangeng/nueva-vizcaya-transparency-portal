@@ -50,7 +50,7 @@ export default defineConfig({
     { name: 'Villa Coloma' },
     { name: 'Villaros' },
   ],
-  siteUrl: 'https://betterbagabag.org',
+  siteUrl: 'https://budget.betterbagabag.org',
   related: [{ label: 'Nueva Vizcaya province', url: 'https://betternuevavizcaya.org' }],
   // The template's credit stays in the footer.
   buildYourOwnStrip: false,
